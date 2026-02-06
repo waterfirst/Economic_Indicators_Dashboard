@@ -468,10 +468,13 @@ async def polling_loop():
         try:
             while _running:
                 try:
-                    updates = await api_call(
-                        client, "getUpdates",
-                        offset=offset, timeout=30,
+                    url = f"{API_BASE}/getUpdates"
+                    resp = await client.post(
+                        url,
+                        json={"offset": offset, "timeout": 30},
+                        timeout=60,  # httpx timeout > Telegram long poll timeout
                     )
+                    updates = resp.json()
 
                     if not updates.get("ok"):
                         await asyncio.sleep(5)
