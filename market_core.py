@@ -3,7 +3,12 @@ market_core.py - Pure Python market data logic (no Streamlit dependency)
 
 Streamlit 대시보드와 Telegram 봇 모두에서 재사용할 수 있는 핵심 시장 데이터 로직.
 """
-import yfinance as yf
+try:
+    import yfinance as yf
+    HAS_YFINANCE = True
+except ImportError:
+    HAS_YFINANCE = False
+
 from datetime import datetime, timedelta
 from typing import Optional
 import time
@@ -61,6 +66,9 @@ def fetch_market_data():
         cached = _cache.get('market_data')
         if cached and (time.time() - cached['ts']) < CACHE_TTL:
             return cached['data']
+
+    if not HAS_YFINANCE:
+        raise RuntimeError("yfinance가 설치되지 않았습니다. pip install yfinance")
 
     data = []
     for key, info in TICKER_MAP.items():
