@@ -9,6 +9,9 @@ try:
 except ImportError:
     HAS_YFINANCE = False
 
+import re
+import requests
+from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 from typing import Optional
 import time
@@ -410,6 +413,49 @@ def calculate_pair_trading_signals(market_data):
         }
 
     return signals
+
+
+def fetch_economy_news(count=10):
+    """네이버 경제 뉴스 가져오기"""
+    try:
+        url = "https://news.naver.com/section/101"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        res = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
+        news_items = soup.select("div.sa_text a.sa_text_title")
+
+        results = []
+        for item in news_items[:count]:
+            title = item.get_text(strip=True)
+            link = item['href']
+            title = re.sub(r'[<>&"]', '', title)
+            results.append({'title': title, 'link': link})
+        return results
+    except Exception:
+        return []
+
+
+def fetch_ai_news(count=10):
+    """Google News RSS에서 AI 뉴스 가져오기"""
+    try:
+        url = "https://news.google.com/rss/search?q=AI+%EC%9D%B8%EA%B3%B5%EC%A7%80%EB%8A%A5&hl=ko&gl=KR&ceid=KR:ko"
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        soup = BeautifulSoup(res.text, "xml")
+        items = soup.find_all("item")
+
+        results = []
+        for item in items[:count]:
+            title = item.title.get_text(strip=True)
+            link = str(item.link.string or "")
+            source = item.source
+            source_name = source.get_text(strip=True) if source else ""
+            title = re.sub(r'[<>&"]', '', title)
+            if source_name:
+                title = re.sub(r'\s*-\s*' + re.escape(source_name) + r'$', '', title)
+            results.append({'title': title, 'link': link, 'source': source_name})
+        return results
+    except Exception:
+        return []
 
 
 def clear_cache():

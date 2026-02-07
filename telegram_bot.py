@@ -25,6 +25,8 @@ from market_core import (
     fetch_market_data,
     compute_risk_signal,
     calculate_pair_trading_signals,
+    fetch_economy_news,
+    fetch_ai_news,
     clear_cache,
 )
 
@@ -126,6 +128,8 @@ async def cmd_start(client, chat_id, user):
         f"/market - \U0001f4c8 실시간 시장 데이터\n"
         f"/pairs - \U0001f4b1 페어 트레이딩 신호\n"
         f"/summary - \U0001f4cb 전체 요약 리포트\n"
+        f"/news - \U0001f4f0 경제 뉴스 TOP 10\n"
+        f"/ai - \U0001f916 AI 뉴스 TOP 10\n"
         f"/refresh - \U0001f504 데이터 새로고침\n"
         f"/alert - \u23f0 정기 알림 설정\n"
         f"/id - \U0001f194 내 User ID 확인\n"
@@ -141,6 +145,8 @@ async def cmd_help(client, chat_id, user):
         "`/market` - 12개 지수 실시간 현황\n"
         "`/pairs` - 4개 페어 트레이딩 신호 (5단계)\n"
         "`/summary` - 위험 + 시장 + 페어 전체 요약\n"
+        "`/news` - 경제 뉴스 TOP 10\n"
+        "`/ai` - AI 뉴스 TOP 10\n"
         "`/refresh` - 캐시 초기화 후 새 데이터\n"
         "`/alert on` - 정기 알림 켜기\n"
         "`/alert off` - 정기 알림 끄기\n"
@@ -286,6 +292,41 @@ async def cmd_summary(client, chat_id, user):
         await send_message(client, chat_id, f"\u274c 오류: {e}")
 
 
+async def cmd_news(client, chat_id, user):
+    await send_message(client, chat_id, "\u23f3 경제 뉴스를 가져오는 중...")
+    try:
+        news = fetch_economy_news(10)
+        if not news:
+            await send_message(client, chat_id, "\u274c 뉴스를 가져올 수 없습니다.")
+            return
+        lines = ["\U0001f4f0 *경제 뉴스 TOP 10*", ""]
+        for i, item in enumerate(news, 1):
+            lines.append(f"{i}. [{item['title']}]({item['link']})")
+        lines.append(f"\n\U0001f552 {datetime.now().strftime('%H:%M:%S')}")
+        await send_message(client, chat_id, "\n".join(lines))
+    except Exception as e:
+        logger.error("cmd_news error: %s", e)
+        await send_message(client, chat_id, f"\u274c 오류: {e}")
+
+
+async def cmd_ai(client, chat_id, user):
+    await send_message(client, chat_id, "\u23f3 AI 뉴스를 가져오는 중...")
+    try:
+        news = fetch_ai_news(10)
+        if not news:
+            await send_message(client, chat_id, "\u274c AI 뉴스를 가져올 수 없습니다.")
+            return
+        lines = ["\U0001f916 *AI 뉴스 TOP 10*", ""]
+        for i, item in enumerate(news, 1):
+            src = f" ({item['source']})" if item.get('source') else ""
+            lines.append(f"{i}. [{item['title']}]({item['link']}){src}")
+        lines.append(f"\n\U0001f552 {datetime.now().strftime('%H:%M:%S')}")
+        await send_message(client, chat_id, "\n".join(lines))
+    except Exception as e:
+        logger.error("cmd_ai error: %s", e)
+        await send_message(client, chat_id, f"\u274c 오류: {e}")
+
+
 async def cmd_refresh(client, chat_id, user):
     clear_cache()
     await send_message(client, chat_id,
@@ -322,6 +363,8 @@ COMMANDS = {
     '/market': cmd_market,
     '/pairs': cmd_pairs,
     '/summary': cmd_summary,
+    '/news': cmd_news,
+    '/ai': cmd_ai,
     '/refresh': cmd_refresh,
 }
 
@@ -430,6 +473,8 @@ async def register_commands(client: httpx.AsyncClient):
         {"command": "market", "description": "실시간 시장 데이터"},
         {"command": "pairs", "description": "페어 트레이딩 신호"},
         {"command": "summary", "description": "전체 요약 리포트"},
+        {"command": "news", "description": "경제 뉴스 TOP 10"},
+        {"command": "ai", "description": "AI 뉴스 TOP 10"},
         {"command": "refresh", "description": "데이터 새로고침"},
         {"command": "alert", "description": "정기 알림 on/off"},
         {"command": "id", "description": "내 User ID 확인"},

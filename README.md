@@ -28,6 +28,8 @@
 | `/market` | 12개 지수 실시간 현황 |
 | `/pairs` | 4개 페어 트레이딩 신호 (5단계) |
 | `/summary` | 전체 요약 리포트 |
+| `/news` | 경제 뉴스 TOP 10 |
+| `/ai` | AI 뉴스 TOP 10 |
 | `/refresh` | 데이터 캐시 초기화 |
 | `/alert on/off` | 정기 알림 설정 (PC 모드만) |
 | `/id` | 내 Telegram User ID 확인 |

@@ -30,6 +30,8 @@ from market_core import (
     fetch_market_data,
     compute_risk_signal,
     calculate_pair_trading_signals,
+    fetch_economy_news,
+    fetch_ai_news,
     clear_cache,
 )
 
@@ -113,6 +115,8 @@ def cmd_start(chat_id, user):
         f"/market - \U0001f4c8 실시간 시장 데이터\n"
         f"/pairs - \U0001f4b1 페어 트레이딩 신호\n"
         f"/summary - \U0001f4cb 전체 요약 리포트\n"
+        f"/news - \U0001f4f0 경제 뉴스 TOP 10\n"
+        f"/ai - \U0001f916 AI 뉴스 TOP 10\n"
         f"/refresh - \U0001f504 데이터 새로고침\n"
         f"/id - \U0001f194 내 User ID 확인\n"
         f"/help - \u2753 도움말\n"
@@ -126,6 +130,8 @@ def cmd_help(chat_id, user):
         "`/market` - 12개 지수 실시간 현황\n"
         "`/pairs` - 4개 페어 트레이딩 신호 (5단계)\n"
         "`/summary` - 위험 + 시장 + 페어 전체 요약\n"
+        "`/news` - 경제 뉴스 TOP 10\n"
+        "`/ai` - AI 뉴스 TOP 10\n"
         "`/refresh` - 캐시 초기화 후 새 데이터\n"
         "`/id` - 텔레그램 User ID 확인\n\n"
         "*\U0001f512 보안*\n"
@@ -248,6 +254,41 @@ def cmd_summary(chat_id, user):
         send_message(chat_id, f"\u274c 오류: {e}")
 
 
+def cmd_news(chat_id, user):
+    send_message(chat_id, "\u23f3 경제 뉴스를 가져오는 중...")
+    try:
+        news = fetch_economy_news(10)
+        if not news:
+            send_message(chat_id, "\u274c 뉴스를 가져올 수 없습니다.")
+            return
+        lines = ["\U0001f4f0 *경제 뉴스 TOP 10*", ""]
+        for i, item in enumerate(news, 1):
+            lines.append(f"{i}. [{item['title']}]({item['link']})")
+        lines.append(f"\n\U0001f552 {datetime.now().strftime('%H:%M:%S')}")
+        send_message(chat_id, "\n".join(lines))
+    except Exception as e:
+        logger.error("cmd_news error: %s", e)
+        send_message(chat_id, f"\u274c 오류: {e}")
+
+
+def cmd_ai(chat_id, user):
+    send_message(chat_id, "\u23f3 AI 뉴스를 가져오는 중...")
+    try:
+        news = fetch_ai_news(10)
+        if not news:
+            send_message(chat_id, "\u274c AI 뉴스를 가져올 수 없습니다.")
+            return
+        lines = ["\U0001f916 *AI 뉴스 TOP 10*", ""]
+        for i, item in enumerate(news, 1):
+            src = f" ({item['source']})" if item.get('source') else ""
+            lines.append(f"{i}. [{item['title']}]({item['link']}){src}")
+        lines.append(f"\n\U0001f552 {datetime.now().strftime('%H:%M:%S')}")
+        send_message(chat_id, "\n".join(lines))
+    except Exception as e:
+        logger.error("cmd_ai error: %s", e)
+        send_message(chat_id, f"\u274c 오류: {e}")
+
+
 def cmd_refresh(chat_id, user):
     clear_cache()
     send_message(chat_id,
@@ -257,7 +298,8 @@ def cmd_refresh(chat_id, user):
 COMMANDS = {
     '/start': cmd_start, '/help': cmd_help, '/id': cmd_id,
     '/risk': cmd_risk, '/market': cmd_market, '/pairs': cmd_pairs,
-    '/summary': cmd_summary, '/refresh': cmd_refresh,
+    '/summary': cmd_summary, '/news': cmd_news, '/ai': cmd_ai,
+    '/refresh': cmd_refresh,
 }
 
 
