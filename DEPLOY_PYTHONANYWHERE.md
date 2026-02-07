@@ -31,7 +31,7 @@ cd telegram-bot
 
 **Bash console**에서:
 ```bash
-pip3 install --user httpx python-dotenv yfinance flask
+pip3 install --user httpx python-dotenv yfinance flask beautifulsoup4 lxml requests
 ```
 
 ## 4단계: .env 파일 생성
