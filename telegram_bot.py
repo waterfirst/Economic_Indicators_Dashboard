@@ -17,6 +17,7 @@ import json
 import logging
 import asyncio
 import signal
+import time
 from datetime import datetime
 from dotenv import load_dotenv
 import httpx
@@ -29,6 +30,7 @@ from market_core import (
     fetch_ai_news,
     clear_cache,
 )
+from visualizer import generate_all_charts
 
 # ──────────────────────────────────────────────
 # 설정
@@ -45,7 +47,8 @@ for uid in _raw.split(","):
     if uid.isdigit():
         AUTHORIZED_USERS.add(int(uid))
 
-ALERT_INTERVAL = int(os.getenv("ALERT_INTERVAL", "3600"))
+ALERT_INTERVAL = int(os.getenv("ALERT_INTERVAL", "1800"))
+SIGNAL_CHECK_INTERVAL = 3600
 
 logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
@@ -93,8 +96,28 @@ async def send_message(client: httpx.AsyncClient, chat_id: int, text: str,
         text = text[idx:].lstrip("\n")
 
     for part in parts:
-        await api_call(client, "sendMessage",
-                       chat_id=chat_id, text=part, parse_mode=parse_mode)
+        await api_call(client, "sendMessage", chat_id=chat_id, text=part, parse_mode=parse_mode)
+
+
+async def send_photo(client: httpx.AsyncClient, chat_id: int, photo_path: str, caption: str = None):
+    """이미지 전송"""
+    url = f"{API_BASE}/sendPhoto"
+    try:
+        with open(photo_path, "rb") as f:
+            files = {"photo": f}
+            data = {"chat_id": str(chat_id)}
+            if caption:
+                data["caption"] = caption
+                data["parse_mode"] = "Markdown"
+            
+            resp = await client.post(url, data=data, files=files, timeout=30)
+            res = resp.json()
+            if not res.get("ok"):
+                logger.error("sendPhoto error: %s", res)
+            return res
+    except Exception as e:
+        logger.error("send_photo exception: %s", e)
+        return {"ok": False, "description": str(e)}
 
 
 # ──────────────────────────────────────────────
@@ -130,6 +153,7 @@ async def cmd_start(client, chat_id, user):
         f"/summary - \U0001f4cb 전체 요약 리포트\n"
         f"/news - \U0001f4f0 경제 뉴스 TOP 10\n"
         f"/ai - \U0001f916 AI 뉴스 TOP 10\n"
+        f"/chart - \U0001f4ca 시각화 차트 전송\n"
         f"/refresh - \U0001f504 데이터 새로고침\n"
         f"/alert - \u23f0 정기 알림 설정\n"
         f"/id - \U0001f194 내 User ID 확인\n"
@@ -147,6 +171,7 @@ async def cmd_help(client, chat_id, user):
         "`/summary` - 위험 + 시장 + 페어 전체 요약\n"
         "`/news` - 경제 뉴스 TOP 10\n"
         "`/ai` - AI 뉴스 TOP 10\n"
+        "`/chart` - 주요 지수 및 리스크 차트 (PNG)\n"
         "`/refresh` - 캐시 초기화 후 새 데이터\n"
         "`/alert on` - 정기 알림 켜기\n"
         "`/alert off` - 정기 알림 끄기\n"
@@ -333,6 +358,39 @@ async def cmd_refresh(client, chat_id, user):
                        "\U0001f504 캐시를 초기화했습니다. 다음 명령에서 최신 데이터를 가져옵니다.")
 
 
+async def cmd_chart(client, chat_id, user):
+    await send_message(client, chat_id, "\u23f3 차트를 생성하는 중... (약 5-10초 소요)")
+    try:
+        # 비동기 환경에서 차트 생성 실행 (블로킹 방지 위해 run_in_executor 사용 권장되나 여기선 단순 구현)
+        # generate_all_charts는 내부적으로 파일을 저장함
+        generate_all_charts()
+        
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        charts = [
+            ("risk_indicator.png", "리스크 신호등"),
+            ("market_overview.png", "주요 지수 현황"),
+            ("pair_trading_board.png", "페어 트레이딩 신호등 (5단계)"),
+            ("history_GSPC.png", "S&P 500 장기 트렌드"),
+            ("history_NDX.png", "NASDAQ 100 장기 트렌드"),
+            ("history_BTC-USD.png", "Bitcoin 장기 트렌드"),
+            ("history_KRWX.png", "원/달러 환율 장기 트렌드"),
+            ("history_GCF.png", "Gold(금) 장기 트렌드"),
+            ("history_SIF.png", "Silver(은) 장기 트렌드"),
+        ]
+        
+        for filename, caption in charts:
+            path = os.path.join(base_path, filename)
+            if os.path.exists(path):
+                await send_photo(client, chat_id, path, caption=f"*{caption}*")
+                await asyncio.sleep(0.5)  # 전송 간격
+            else:
+                logger.warning("Chart file not found: %s", path)
+                
+    except Exception as e:
+        logger.error("cmd_chart error: %s", e)
+        await send_message(client, chat_id, f"\u274c 차트 생성 중 오류 발생: {e}")
+
+
 async def cmd_alert(client, chat_id, user, args=""):
     args = args.strip().lower()
 
@@ -345,7 +403,8 @@ async def cmd_alert(client, chat_id, user, args=""):
         _alert_chats.add(chat_id)
         await send_message(client, chat_id,
                            f"\u2705 정기 알림을 켰습니다.\n"
-                           f"간격: {ALERT_INTERVAL // 60}분")
+                           f"간격: 30분 (매 시각 정기 보고)\n"
+                           f"트레이딩 신호: 1시간마다 리프레쉬 후 알림")
     elif args == "off":
         _alert_chats.discard(chat_id)
         await send_message(client, chat_id, "\u26d4 정기 알림을 껐습니다.")
@@ -365,6 +424,7 @@ COMMANDS = {
     '/summary': cmd_summary,
     '/news': cmd_news,
     '/ai': cmd_ai,
+    '/chart': cmd_chart,
     '/refresh': cmd_refresh,
 }
 
@@ -417,49 +477,79 @@ async def process_update(client: httpx.AsyncClient, update: dict):
 # 정기 알림 루프
 # ──────────────────────────────────────────────
 async def alert_loop(client: httpx.AsyncClient):
-    """정기 알림을 보내는 백그라운드 루프"""
+    """정기 알림 및 매수/매도 타이밍 알림 루프"""
+    last_signal_check = 0
+    
     while _running:
-        await asyncio.sleep(ALERT_INTERVAL)
-        if not _alert_chats:
-            continue
+        await asyncio.sleep(60) # 1분 간격으로 체크
+        
+        now_ts = time.time()
+        
+        # 1. 매 시간(3600초)마다 데이터 강제 리프레쉬 및 신호 체크
+        if now_ts - last_signal_check >= SIGNAL_CHECK_INTERVAL:
+            last_signal_check = now_ts
+            try:
+                clear_cache()
+                data = fetch_market_data()
+                signals = calculate_pair_trading_signals(data)
+                
+                # 중립이 아닌 신호만 추출
+                active_signals = {k: v for k, v in signals.items() if 'neutral' not in v['level']}
+                
+                if active_signals:
+                    for cid in list(_alert_chats):
+                        lines = [
+                            f"\U0001f6a8 *트레이딩 신호 알림 (1시간 주기)*",
+                            f"",
+                            f"*강력 신호 포착:*" if any('strong' in v['level'] for v in active_signals.values()) else "*매수/매도 신호 포착:*",
+                            f""
+                        ]
+                        for sig in active_signals.values():
+                            lines.append(f"  {sig['name']}: {sig['signal']}")
+                            lines.append(f"  _{sig['description']}_")
+                            lines.append("")
+                        
+                        lines.append(f"\U0001f552 {datetime.now().strftime('%H:%M:%S')}")
+                        await send_message(client, cid, "\n".join(lines))
+            except Exception as e:
+                logger.error("Signal check error: %s", e)
 
-        try:
-            data = fetch_market_data()
-            risk = compute_risk_signal(data)
-            signals = calculate_pair_trading_signals(data)
+        # 2. 30분(ALERT_INTERVAL)마다 정기 상태 보고
+        # (단순 구현을 위해 루프 시작 시점 기준 modulo 연산 대신 타임스탬프 관리 권장되나 여기선 기존 패턴 유지)
+        if int(now_ts) % ALERT_INTERVAL < 60: # 30분 마다 (1분 오차)
+            if not _alert_chats:
+                continue
 
-            lines = [
-                f"\u23f0 *정기 시장 알림*",
-                f"",
-                f"\U0001f6a8 위험: {risk['emoji']} {risk['level']} (점수: {risk['score']})",
-                f"",
-            ]
+            try:
+                data = fetch_market_data()
+                risk = compute_risk_signal(data)
+                
+                lines = [
+                    f"\u23f0 *30분 정기 시장 브리핑*",
+                    f"",
+                    f"\U0001f6a8 위험: {risk['emoji']} {risk['level']} (점수: {risk['score']})",
+                    f"",
+                ]
 
-            movers = [item for item in data if abs(item['change_pct']) >= 1.0]
-            if movers:
-                lines.append("*주요 변동:*")
-                for item in movers:
-                    chg = item['change_pct']
-                    arrow = "\U0001f53c" if chg > 0 else "\U0001f53d"
-                    lines.append(f"  {arrow} {item['name']}: {chg:+.2f}%")
-                lines.append("")
+                # 주요 지수 3개만 요약
+                key_ids = ['spx', 'ndx', 'btc']
+                for item in data:
+                    if item['id'] in key_ids:
+                        chg = item['change_pct']
+                        arrow = "\U0001f53c" if chg > 0 else "\U0001f53d"
+                        lines.append(f"  {arrow} {item['name']}: {chg:+.2f}%")
+                
+                lines.append(f"\n/chart 명령으로 상세 차트를 확인하세요.")
+                lines.append(f"\U0001f552 {datetime.now().strftime('%H:%M:%S')}")
+                text = "\n".join(lines)
 
-            non_neutral = {k: v for k, v in signals.items() if 'neutral' not in v['level']}
-            if non_neutral:
-                lines.append("*액티브 신호:*")
-                for sig in non_neutral.values():
-                    lines.append(f"  {sig['name']}: {sig['signal']}")
-
-            lines.append(f"\n\U0001f552 {datetime.now().strftime('%H:%M:%S')}")
-            text = "\n".join(lines)
-
-            for cid in list(_alert_chats):
-                try:
-                    await send_message(client, cid, text)
-                except Exception as e:
-                    logger.error("Alert to %d failed: %s", cid, e)
-        except Exception as e:
-            logger.error("alert_loop error: %s", e)
+                for cid in list(_alert_chats):
+                    try:
+                        await send_message(client, cid, text)
+                    except Exception as e:
+                        logger.error("Regular alert to %d failed: %s", cid, e)
+            except Exception as e:
+                logger.error("alert_loop summary error: %s", e)
 
 
 # ──────────────────────────────────────────────
@@ -475,6 +565,7 @@ async def register_commands(client: httpx.AsyncClient):
         {"command": "summary", "description": "전체 요약 리포트"},
         {"command": "news", "description": "경제 뉴스 TOP 10"},
         {"command": "ai", "description": "AI 뉴스 TOP 10"},
+        {"command": "chart", "description": "시각화 차트 전송"},
         {"command": "refresh", "description": "데이터 새로고침"},
         {"command": "alert", "description": "정기 알림 on/off"},
         {"command": "id", "description": "내 User ID 확인"},
